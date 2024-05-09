@@ -1,0 +1,22 @@
+version: 2.1.0
+services:
+  sql-service:
+    build:
+      context: ./streamingSQL
+      dockerfile: Dockerfile
+  db:
+    image: postgres:18-alpine
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=logical"
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-4WXUms893U6j4GE&Hvk3S*hqcqebFgo!vZi}
+    volumes:
+      - pgVolume:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  pgVolume:

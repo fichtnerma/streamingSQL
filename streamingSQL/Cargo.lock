@@ -1184,9 +1184,9 @@ dependencies = [
 
 [[package]]
 name = "sqlparser"
-version = "0.44.0"
+version = "0.46.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aaf9c7ff146298ffda83a200f8d5084f08dcee1edfc135fcc1d646a45d50ffd6"
+checksum = "11a81a8cad9befe4cf1b9d2d4b9c6841c76f0882a3fec00d95133953c13b3d3d"
 dependencies = [
  "log",
 ]
@@ -1199,6 +1199,7 @@ dependencies = [
  "differential-dataflow",
  "postgres",
  "sqlparser",
+ "timely",
 ]
 
 [[package]]

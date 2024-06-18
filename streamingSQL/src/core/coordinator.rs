@@ -1,19 +1,17 @@
-use std::{collections::HashMap, rc::Rc};
+use crate::core::parser::parse_query;
 
 use crate::pg_client::pg_client::PGClient;
 
-use super::worker::Worker;
+use super::planer::QueryPlaner;
 
 pub struct Coordinator {
-    view_worker_map: HashMap<String, Worker>,
-    pg_client: Rc<PGClient>,
+    pg_client: PGClient,
 }
 
 impl Coordinator {
     pub fn new() -> Self {
         Coordinator {
-            view_worker_map: HashMap::new(),
-            pg_client: Rc::new(PGClient::new("localhost", "postgres").ok().unwrap()),
+            pg_client: PGClient::new("localhost", "postgres").ok().unwrap(),
         }
     }
 
@@ -21,12 +19,10 @@ impl Coordinator {
         &mut self,
         query: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        if !self.view_worker_map.contains_key(query) {
-            let query_str = query.to_string();
-            let worker = Worker::new(Rc::clone(&self.pg_client));
-            worker.run().await?;
-            self.view_worker_map.insert(query.to_string(), worker);
-        }
+        let query_str = query.to_string();
+        let query_info = parse_query(&query_str).unwrap();
+        let planer = QueryPlaner::new();
+        planer.plan(query_info);
         Ok(())
     }
 }

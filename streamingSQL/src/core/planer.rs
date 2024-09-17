@@ -1,3 +1,4 @@
+
 use super::parser::Query;
 extern crate differential_dataflow;
 extern crate timely;
@@ -10,7 +11,7 @@ use timely::worker::Worker as TimelyWorker;
 pub struct ActiveCompute<A: Allocate> {
     worker: TimelyWorker<A>,
     planer: QueryPlaner,
-    export: string,
+    export: String,
 }
 
 pub struct QueryPlaner {}

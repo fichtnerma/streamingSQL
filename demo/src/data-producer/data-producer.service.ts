@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { CreateDataProducerDto } from './dto/create-data-producer.dto';
-import { PrismaService } from 'src/prisma.service';
+import { PrismaService } from 'src/prisma/prisma.service';
 
 const MILISECONDS_IN_A_SECOND = 1000;
 @Injectable()
@@ -16,9 +16,11 @@ export class DataProducerService {
         clearInterval(interval);
       }
       if (Math.random() < skew) {
-        await this.generateOrderData(
-          createdUsers[Math.floor(Math.random() * createdUsers.length)],
-        );
+        if(createdUsers.length > 0) {
+          await this.generateOrderData(
+            createdUsers[Math.floor(Math.random() * createdUsers.length)],
+          );
+        }
       } else {
         const user = await this.generateRandomUser();
         createdUsers.push(user.id);

@@ -1,6 +1,7 @@
 use sqlparser::ast::Expr::{BinaryOp, CompoundIdentifier};
-use sqlparser::ast::{Select, Statement, TableWithJoins};
+use sqlparser::ast::{Statement, TableWithJoins};
 use sqlparser::dialect::PostgreSqlDialect;
+use sqlparser::ast::SetExpr::Select;
 use sqlparser::parser::Parser;
 
 pub struct Query {
@@ -33,79 +34,70 @@ pub fn parse_query(sql: &str) -> Result<Query, String> {
     let mut tables: Vec<String> = vec![];
     let mut rows: Vec<RowProperty> = vec![];
 
-    let body = &ast[0].query().unwrap().body as Select;
-
-    body.projection.iter().for_each(|p| match p {
-        CompoundIdentifier(ref rowCompound) => {
-            let row = RowProperty {
-                table: rowCompound[0].value,
-                row: rowCompound[1].value,
-            };
-            rows.push(row);
-        }
-        _ => {}
-    });
-
-    let from = body.from[0] as TableWithJoins;
-    tables.push(from.relation.name.value);
-    tables.push(from.joins[0].relation.name.value);
-    let join = if from.joins[0].join_operator.is_some() {
-        Some(JoinCondition {
-            left: RowProperty {
-                table: from.relation.name.value,
-                row: from.joins[0].constraint.unwrap().left.to_string(),
-            },
-            operator: from.joins[0].join_operator.to_string(),
-            right: RowProperty {
-                table: from.joins[0].relation.name.value,
-                row: from.joins[0].constraint.unwrap().right.to_string(),
-            },
-        })
-    } else {
-        None
-    };
-    let condition = if body.selection.is_some() {
-        Some(WhereCondition {
-            left: RowProperty {
-                table: body.selection.left[0].name.value,
-                row: body.selection.left[1].name.value,
-            },
-            op: body.selection.op.to_string(),
-            right: body.selection.right.to_string(),
-        })
-    } else {
-        None
-    };
-
-    let query = Query {
-        tables,
-        rows,
-        join,
-        condition,
-    };
-
-    Ok(query)
-}
-
-fn parse_statement(sql: &str) -> Result<Vec<Statement>, String> {
-    let dialect = PostgreSqlDialect {};
-    let ast = Parser::parse_sql(&dialect, sql).unwrap();
-    match ast[0] {
-        Statement::Insert(ref insert) => {
-            println!("Insert: {:?}", insert);
-        }
-        Statement::Update(ref update) => {
-            println!("Update: {:?}", update);
-        }
-        Statement::Delete(ref delete) => {
-            println!("Delete: {:?}", delete);
-        }
-        _ => {}
+    let statement = &ast[0];
+    match statement {
+        Statement::Query(ref query) => {
+        
+        let body = if let Select(select) = *query.body {
+            select
+        } else {
+            return Err("Unsupported query type".to_string());
+        };
+        
+        body.projection.iter().for_each(|p: &sqlparser::ast::SelectItem| match p {
+            sqlparser::ast::SelectItem::UnnamedExpr(ref expr) => {
+                let row = RowProperty {
+                    table: expr[0].value,
+                    row: expr[1].value,
+                };
+                rows.push(row);
+                
+            }
+            _ => {}
+        });
+        
+        let from = body.from[0] as TableWithJoins;
+        tables.push(from.relation.name.value);
+        tables.push(from.joins[0].relation.name.value);
+        let join = if from.joins[0].join_operator.is_some() {
+            Some(JoinCondition {
+                left: RowProperty {
+                    table: from.relation.name.value,
+                    row: from.joins[0].constraint.unwrap().left.to_string(),
+                },
+                operator: from.joins[0].join_operator.to_string(),
+                right: RowProperty {
+                    table: from.joins[0].relation.name.value,
+                    row: from.joins[0].constraint.unwrap().right.to_string(),
+                },
+            })
+        } else {
+            None
+        };
+        let condition = if body.selection.is_some() {
+            Some(WhereCondition {
+                left: RowProperty {
+                    table: body.selection.left[0].name.value,
+                    row: body.selection.left[1].name.value,
+                },
+                op: body.selection.op.to_string(),
+                right: body.selection.right.to_string(),
+            })
+        } else {
+            None
+        };
+        
+        let query = Query {
+            tables,
+            rows,
+            join,
+            condition,
+        };
+        Ok(query)
     }
-
-    println!("AST: {:?}", ast);
-
-    Ok(ast)
+        _ => {
+            return Err("Unsupported query type".to_string());
+        }
+    }
 }
 
-fn captureChanges() {}

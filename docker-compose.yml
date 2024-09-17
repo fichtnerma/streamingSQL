@@ -1,11 +1,31 @@
 version: 2.1.0
 services:
-  sql-service:
+  # sql-service:
+  #   build:
+  #     context: ./streamingSQL
+  #     dockerfile: Dockerfile
+  #   environment:
+  #     - DB_USER=user
+  #     - DB_PASSWORD=password
+  #     - DB_ADDR=db
+  #     - DB_PORT=5432
+  demo: 
     build:
-      context: ./streamingSQL
+      context: ./demo
       dockerfile: Dockerfile
+    command: npm run start:dev
+    ports:
+      - "3000:3000"
+    depends_on:
+      - db
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
   db:
-    image: postgres:18-alpine
+    build:
+      context: ./postgres
+      dockerfile: ./Dockerfile
     command:
       - "postgres"
       - "-c"
@@ -13,7 +33,9 @@ services:
     ports:
       - "5432:5432"
     environment:
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-4WXUms893U6j4GE&Hvk3S*hqcqebFgo!vZi}
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_USER=user
+      - POSTGRES_DB=postgres
     volumes:
       - pgVolume:/var/lib/postgresql/data
     restart: unless-stopped

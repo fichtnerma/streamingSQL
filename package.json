@@ -1,0 +1,14 @@
+{
+    "name": "demo",
+    "version": "0.0.1",
+    "description": "",
+    "author": "",
+    "private": true,
+    "license": "UNLICENSED",
+    "scripts": {
+      "build": "nest build",
+      "dev:pg": "docker compose up --build -d",
+      "dev:demo": "npm run --prefix demo start"
+    }
+  }
+  

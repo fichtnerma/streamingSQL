@@ -9,7 +9,7 @@ services:
   #     - DB_PASSWORD=password
   #     - DB_ADDR=db
   #     - DB_PORT=5432
-  demo: 
+  demo:
     build:
       context: ./demo
       dockerfile: Dockerfile

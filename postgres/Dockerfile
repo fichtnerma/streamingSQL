@@ -1,5 +1,5 @@
-FROM postgres:14.5
+FROM postgres:16.4
 
 RUN apt-get update &&\
     apt-get install -y \
-    postgresql-14-decoderbufs
+    postgresql-16-wal2json

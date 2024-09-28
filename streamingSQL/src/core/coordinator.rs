@@ -1,18 +1,23 @@
+use std::collections::HashMap;
+
 use tokio::task;
+use tracing::debug;
 
 use crate::core::parser::parse_query;
 
-use crate::pg_client::replication::{start_streaming_changes, Transaction};
-use crate::pg_client::subscriber::subscribe;
+use crate::pg_client::data::WalEvent;
+use crate::pg_client::stream::start_streaming_changes;
 
 use super::planer::QueryPlaner;
 
 pub struct Coordinator {
+    channels: HashMap<String, tokio::sync::broadcast::Sender<Vec<WalEvent>>>,
 }
 
 impl Coordinator {
     pub fn new() -> Self {
         Coordinator {
+            channels: HashMap::new(),
         }
     }
 
@@ -21,26 +26,19 @@ impl Coordinator {
         query: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let query_str = query.to_string();
-        let query_info = parse_query(&query_str).unwrap();
+        let mut query_info = parse_query(&query_str).unwrap();
         let planer = QueryPlaner::new();
-        planer.plan(query_info);
-        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<()>();
-        let (tx, _rx) = tokio::sync::broadcast::channel::<Transaction>(100);
-        let tx_clone = tx.clone();
-        let streaming_handle =
-            task::spawn(async { start_streaming_changes(ready_tx, tx_clone).await });
-    
-        // block waiting for replication
-        ready_rx.await.unwrap();
-
-        let tx_clone = tx.clone();
-
-        let (done_tx, done_rx) = tokio::sync::mpsc::channel::<()>(1);
-
-        let subscriber_handle = task::spawn(async move { subscribe(tx_clone, done_rx).await });
-    
-        streaming_handle.await.unwrap().unwrap();
-        subscriber_handle.await.unwrap();
+        for table in &query_info.tables {
+            let table_name = table.to_string();
+            debug!("Listening to Table: {}", &table_name);
+            let (tx, _) = tokio::sync::broadcast::channel::<Vec<WalEvent>>(100);
+            let tx_clone = tx.clone();
+            task::spawn(async { start_streaming_changes(tx_clone, table_name).await });
+            self.channels.insert(table.to_string(), tx);
+        }
+        planer
+            .build_dataflow(&mut query_info, self.channels.clone())
+            .await;
         Ok(())
     }
 }

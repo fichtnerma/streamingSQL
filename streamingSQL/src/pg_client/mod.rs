@@ -1,2 +1,5 @@
+pub mod data;
+pub mod publication;
 pub mod replication;
-pub mod subscriber;
+pub mod schema;
+pub mod stream;

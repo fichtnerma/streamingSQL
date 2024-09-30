@@ -50,7 +50,6 @@ pub fn parse_query(sql: &str) -> Result<Query, String> {
     let dialect = PostgreSqlDialect {};
     let ast = Parser::parse_sql(&dialect, sql).unwrap();
     let mut tables: Vec<String> = vec![];
-
     let statement = &ast[0];
     match statement {
         Statement::Query(ref query) => {
@@ -61,7 +60,7 @@ pub fn parse_query(sql: &str) -> Result<Query, String> {
             };
 
             let rows = parse_projection(body.projection);
-            let tables = parse_from(body.from.clone());
+            tables = parse_from(body.from.clone());
             let joins = parse_joins(body.from);
             let condition = parse_condition(body.selection);
 
@@ -108,11 +107,22 @@ fn parse_projection(select: Vec<sqlparser::ast::SelectItem>) -> Vec<RowProperty>
 
 fn parse_from(from: Vec<TableWithJoins>) -> Vec<String> {
     let mut tables: Vec<String> = vec![];
-    from.iter().for_each(|from| match from.relation.clone() {
-        TableFactor::Table { name, alias, .. } => {
-            tables.push(name.to_string());
+    from.iter().for_each(|from| {
+        match from.relation.clone() {
+            TableFactor::Table { name, alias, .. } => {
+                tables.push(name.to_string().trim_matches('"').to_string());
+            }
+            _ => {}
         }
-        _ => {}
+
+        from.joins
+            .iter()
+            .for_each(|join| match join.relation.clone() {
+                TableFactor::Table { name, alias, .. } => {
+                    tables.push(name.to_string().trim_matches('"').to_string());
+                }
+                _ => {}
+            });
     });
     tables
 }
@@ -170,6 +180,9 @@ fn parse_joins(from: Vec<sqlparser::ast::TableWithJoins>) -> Vec<JoinCondition> 
 }
 
 fn parse_condition(selection: Option<Expr>) -> Option<WhereCondition> {
+    if selection.is_none() {
+        return None;
+    }
     match selection.unwrap() {
         BinaryOp { left, op, right } => {
             let left = match *left {

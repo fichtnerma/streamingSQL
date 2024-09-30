@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use tokio_postgres::SimpleQueryMessage;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 pub struct Publication {
     pub client: Arc<tokio_postgres::Client>,
@@ -23,7 +23,7 @@ impl Publication {
 
     #[inline]
     pub fn pub_name(&self) -> String {
-        format!("pub_{}", self.table_name.to_lowercase())
+        format!("pub_{}", self.table_name.to_lowercase().trim_matches('"'))
     }
 
     pub async fn check_exists(&self) -> Result<bool, tokio_postgres::Error> {
@@ -58,13 +58,14 @@ impl Publication {
     }
 
     pub async fn create(&self) -> Result<u64, tokio_postgres::Error> {
+        warn!("Publication for: {} {}", self.pub_name(), self.table_name);
         let query = format!(
-            "CREATE PUBLICATION {} FOR TABLE \"{}\"",
+            "CREATE PUBLICATION {} FOR TABLE {}",
             self.pub_name(),
             self.table_name
         );
         debug!("Creating publication: {:?}", query);
-        let result = self.client.execute(&query, &[]).await?;
+        let result = self.client.execute(&query, &[]).await.unwrap();
         info!("Created publication: {:?}", result);
         Ok(result)
     }

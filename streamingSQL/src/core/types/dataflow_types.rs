@@ -1,9 +1,10 @@
 use abomonation::{unsafe_abomonate, Abomonation};
-use core::fmt::Debug;
 use core::hash::Hash;
-use differential_dataflow::{Data, ExchangeData};
-use serde_json::Value;
+use core::{fmt::Debug, panic};
+use serde_json::{Number, Value};
+use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeMap;
+use std::hash::Hasher;
 
 use crate::pg_client::data::{Insert, Update, WalData, WalEvent};
 
@@ -21,10 +22,21 @@ impl DataflowInput {
             match change_event.data {
                 WalData::Insert(insert) => input.push(DataflowInput {
                     element: DataflowData(
-                        change_event.pkey.val.as_str().unwrap().parse().unwrap(),
+                        match change_event.pkey.val {
+                            Value::Number(num) => usize::try_from(num.as_u64().unwrap()).unwrap(),
+                            Value::String(str) => {
+                                let mut hasher = DefaultHasher::new();
+                                str.hash(&mut hasher);
+                                let hash = hasher.finish();
+                                usize::try_from(hash).unwrap()
+                            }
+                            _ => {
+                                panic!("Failed to parse primary key")
+                            }
+                        },
                         match insert {
-                            Insert(data) => (data),
-                            _ => BTreeMap::new(),
+                            Insert(data) => DBRecord(data),
+                            _ => DBRecord::new(),
                         },
                     ),
                     time: usize::try_from(change_event.xid).expect("Failed to convert time"),
@@ -34,7 +46,7 @@ impl DataflowInput {
                     input.push(DataflowInput {
                         element: DataflowData(
                             change_event.pkey.val.as_str().unwrap().parse().unwrap(),
-                            BTreeMap::new(),
+                            DBRecord::new(),
                         ),
                         time: usize::try_from(change_event.xid).expect("Failed to convert time"),
                         change: -1,
@@ -43,8 +55,8 @@ impl DataflowInput {
                         element: DataflowData(
                             change_event.pkey.val.as_str().unwrap().parse().unwrap(),
                             match update {
-                                Update(data) => (data),
-                                _ => BTreeMap::new(),
+                                Update(data) => DBRecord(data),
+                                _ => DBRecord::new(),
                             },
                         ),
                         time: usize::try_from(change_event.xid).expect("Failed to convert time"),
@@ -54,7 +66,7 @@ impl DataflowInput {
                 WalData::Delete => input.push(DataflowInput {
                     element: DataflowData(
                         change_event.pkey.val.as_str().unwrap().parse().unwrap(),
-                        BTreeMap::new(),
+                        DBRecord::new(),
                     ),
                     time: usize::try_from(change_event.xid).expect("Failed to convert time"),
                     change: -1,
@@ -67,11 +79,28 @@ impl DataflowInput {
 
 unsafe_abomonate!(DataflowData);
 #[derive(Clone, Debug)]
-pub struct DataflowData(pub usize, pub BTreeMap<String, Value>);
+pub struct DataflowData(pub usize, DBRecord);
+
+#[derive(Clone, Debug)]
+
+pub struct DBRecord(pub BTreeMap<String, Value>);
+
+impl DBRecord {
+    pub fn new() -> Self {
+        DBRecord(BTreeMap::new())
+    }
+    pub fn as_raw_pointer(&self) -> *const usize {
+        let raw = Box::new(self.clone());
+        Box::into_raw(raw) as *const usize
+    }
+    pub fn from_raw_pointer(raw: *const usize) -> Self {
+        unsafe { (*(*raw as *const DBRecord)).clone() }
+    }
+}
 
 impl PartialEq for DataflowData {
     fn eq(&self, other: &Self) -> bool {
-        self.1 == other.1
+        self.0 == other.0
     }
 }
 

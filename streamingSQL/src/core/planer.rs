@@ -1,10 +1,15 @@
+use crate::{
+    core::types::{
+        dataflow_types::{DataflowData, DataflowInput},
+        inputs::InputSessions,
+        source::Source,
+    },
+    pg_client::data::WalEvent,
+};
 use std::collections::HashMap;
 use std::future::IntoFuture;
+use std::thread;
 
-use crate::core::dataflow_types::DataflowInput;
-use crate::pg_client::data::WalEvent;
-
-use super::dataflow_types::DataflowData;
 use super::parser::Query;
 extern crate differential_dataflow;
 extern crate timely;
@@ -14,6 +19,7 @@ use differential_dataflow::Collection;
 use serde_json::Value;
 use timely::communication::Allocate;
 use timely::worker::Worker as TimelyWorker;
+use tracing::{debug, info};
 
 pub struct ActiveCompute<A: Allocate> {
     worker: TimelyWorker<A>,
@@ -28,53 +34,52 @@ impl QueryPlaner {
         QueryPlaner {}
     }
 
-    pub async fn build_dataflow(
-        &self,
-        query: &mut Query,
-        publishers: HashMap<String, tokio::sync::broadcast::Sender<Vec<WalEvent>>>,
-    ) {
-        let query_clone = query.clone();
+    pub fn build_dataflow(&self, query: Query, source: Source) {
+        info!("Building Dataflow for Query: {:?}", query);
+        // Spawn a new thread and move `source` into it
         let _ = timely::execute_from_args(std::env::args(), move |worker| {
-            let mut inputs: HashMap<String, InputSession<usize, DataflowData, isize>> =
-                HashMap::new();
+            let mut inputs: InputSessions = InputSessions::new(query.tables.clone());
+            let mut local_source = source.clone();
+            info!("Worker started");
 
             worker.dataflow(|scope| {
-                // create a new collection from our input.
+                // Create a new collection from our input.
                 let mut collections = HashMap::new();
-                query_clone.tables.iter().for_each(|table| {
-                    let mut input: InputSession<usize, DataflowData, isize> = InputSession::new();
-                    let collection: Collection<_, DataflowData, isize> = input.to_collection(scope);
-                    collections.insert(table.to_string(), collection);
-                    inputs.insert(table.to_string(), input);
-                });
-                // if (m2, m1) and (m1, p), then output (m1, (m2, p))
-                collections
-                    .get_mut(&query_clone.tables[0])
-                    .unwrap()
-                    .inspect(|x| println!("{:?}", x));
+                for table in &query.tables.clone() {
+                    let collection: Collection<_, DataflowData, isize> =
+                        inputs.get(table).unwrap().to_collection(scope);
+                    collections.insert(table.clone(), collection);
+                }
+
+                // Inspect the first collection if available
+                if let Some(first_table) = query.tables.clone().get(0) {
+                    collections
+                        .get_mut(first_table)
+                        .unwrap()
+                        .inspect(|x| info!("Inspect: {:?}", x));
+                }
             });
-            // Publish to the export
-            for (table, tx) in publishers.iter() {
-                let mut rx = tx.subscribe();
-                loop {
-                    match rx.try_recv() {
-                        Ok(event) => {
-                            let parsed_event = DataflowInput::from_wal_event(event);
-                            let input = inputs.get_mut(table).unwrap();
-                            for i in parsed_event.clone() {
-                                input.update_at(i.element, i.time, i.change);
-                            }
-                            let time = parsed_event.iter().map(|x| x.time).max().unwrap();
-                            input.advance_to(time);
-                            input.flush();
-                            worker.step();
+
+            // Process events until the source is done
+            while !local_source.done() {
+                if let Some(events) = local_source.fetch() {
+                    for event in events {
+                        let parsed_event = DataflowInput::from_wal_event(event.1);
+                        for i in parsed_event.clone() {
+                            inputs.update_at_for_table(&event.0, i.element, i.time, i.change);
                         }
-                        Err(_) => {
-                            worker.step_or_park(None);
-                        }
+                        let time = parsed_event.iter().map(|x| x.time).max().unwrap();
+                        inputs.advance_to(time);
+                        inputs.flush();
+                        worker.step(); // Advance the worker
                     }
+                } else {
+                    worker.step(); // No events; step the worker
                 }
             }
         });
+        loop {
+            thread::sleep(std::time::Duration::from_secs(1));
+        }
     }
 }

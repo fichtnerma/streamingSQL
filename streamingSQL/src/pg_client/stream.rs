@@ -38,20 +38,22 @@ pub async fn start_streaming_changes(
 
     // Check if publication exists or create it if it doesn't
     if publication.check_exists().await? {
+        info!("Publication already exists");
     } else {
+        info!("Creating publication ");
         publication.create().await?;
     }
+    debug!("Before Slot");
 
-    let slot_name = format!("slot_{}", table_name.to_lowercase());
+    let slot_name = format!("slot_{}", table_name.to_lowercase().trim_matches('"'));
     let mut slot = replication::Slot::new(Arc::clone(&repl_client), &slot_name);
     slot.get_confirmed_lsn().await?;
     // Create new replication slot if LSN is None
     if slot.lsn.is_none() {
-        debug!("Replication slot {:?} doesn't exist", slot_name);
         info!("Creating replication slot {:?}", slot_name);
         slot.create().await?;
     }
-
+    debug!("Before Replicator");
     let mut replicator =
         replication::Replicator::new(Arc::clone(&repl_client), slot, publication, tx);
     replicator.start_replication().await;

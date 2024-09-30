@@ -11,7 +11,7 @@ use tracing_subscriber::fmt::{self};
 
 mod core;
 mod pg_client;
-// use core::coordinator::Coordinator;
+use core::coordinator::Coordinator;
 use std::io;
 
 // #[get("/")]
@@ -44,31 +44,41 @@ use std::io;
 async fn main() -> Result<(), tokio_postgres::Error> {
     dotenv::dotenv().ok();
     init_logger();
-    // let _sql = "SELECT customers.customer_id, customers.customer_name, orders.order_id, orders.order_date FROM customers JOIN orders ON customers.customer_id = orders.customers_id WHERE orders.amount > 1000";
-    let table_name = "User".to_string();
-    debug!("Listening to Table: {}", &table_name);
-    let (tx, _rx) = tokio::sync::broadcast::channel::<Vec<WalEvent>>(100);
-    let tx_clone = tx.clone();
-    let (_done_tx, mut done_rx) = tokio::sync::mpsc::channel::<()>(1);
-    let streaming_handle =
-        task::spawn(async { start_streaming_changes(tx_clone, table_name).await });
-    let mut rx = tx.subscribe();
-    loop {
-        tokio::select! {
-            _ = done_rx.recv() => {
-                break
-            }
-            Ok(events) = rx.recv() => {
-                for event in events {
-                    info!("Received event: {:?}", event);
-                }
-            }
-        }
-    }
-    streaming_handle.await.unwrap().unwrap();
-
+    let mut coordinator = Coordinator::new();
+    let query = r#"SELECT "User".id, "User".name, "Order".total FROM "User" JOIN "Order" ON "User".id = "Order"."buyerId""#;
+    coordinator.process_view_query(query).await.unwrap();
     Ok(())
 }
+
+// #[tokio::main]
+// async fn main() -> Result<(), tokio_postgres::Error> {
+//     dotenv::dotenv().ok();
+//     init_logger();
+//     // let _sql = "SELECT customers.customer_id, customers.customer_name, orders.order_id, orders.order_date FROM customers JOIN orders ON customers.customer_id = orders.customers_id WHERE orders.amount > 1000";
+//     let table_name = "User".to_string();
+//     debug!("Listening to Table: {}", &table_name);
+//     let (tx, _rx) = tokio::sync::broadcast::channel::<Vec<WalEvent>>(100);
+//     let tx_clone = tx.clone();
+//     let (_done_tx, mut done_rx) = tokio::sync::broadcast::channel::<()>(1);
+//     let streaming_handle =
+//         task::spawn(async { start_streaming_changes(tx_clone, table_name).await });
+//     let mut rx = tx.subscribe();
+//     loop {
+//         tokio::select! {
+//             _ = done_rx.recv() => {
+//                 break
+//             }
+//             Ok(events) = rx.recv() => {
+//                 for event in events {
+//                     info!("Received event: {:?}", event);
+//                 }
+//             }
+//         }
+//     }
+//     streaming_handle.await.unwrap().unwrap();
+
+//     Ok(())
+// }
 
 fn init_logger() {
     let subscriber = fmt::Subscriber::builder()

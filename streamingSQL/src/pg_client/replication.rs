@@ -198,9 +198,7 @@ impl Replicator {
         debug!("Sent SSU");
     }
 
-    fn replicate(&self) -> Result<(), tokio_postgres::Error> {
-        debug!("Replicating...");
-        debug!("{:?}", self.records);
+    async fn replicate(&self) {
         if self.records.len() >= 1 {
             let wal_events = self
                 .records
@@ -209,9 +207,9 @@ impl Replicator {
                     return WalEvent::from_wal_json(e.clone());
                 })
                 .collect::<Vec<_>>();
+            debug!("Replicating... {:?}", self.records);
             self.sender.send(wal_events).unwrap();
         }
-        Ok(())
     }
 
     async fn process_record(&mut self, record: Value) {
@@ -224,9 +222,7 @@ impl Replicator {
             // Commit of transaction
             "C" => {
                 // (todo): handle error
-                self.replicate().unwrap_or_else(|_| {
-                    warn!("Ignoring replication error");
-                });
+                self.replicate().await;
                 self.commit().await;
             }
             // Insert
@@ -277,6 +273,7 @@ impl Replicator {
     }
 
     pub async fn start_replication(&mut self) {
+        debug!("Starting replication for table: {}", self.table_name);
         let full_table_name = format!("{}.{}", self.schema_name, self.table_name);
         let options = vec![
             ("pretty-print", "false"),
@@ -308,7 +305,7 @@ impl Replicator {
 
         // Pin the stream
         self.stream = Some(Box::pin(duplex_stream));
-
+        debug!("Replication started for table: {}", full_table_name);
         // listen
         loop {
             match self.stream.as_mut().unwrap().next().await {

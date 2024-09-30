@@ -79,7 +79,7 @@ impl DataflowInput {
 
 unsafe_abomonate!(DataflowData);
 #[derive(Clone, Debug)]
-pub struct DataflowData(pub usize, DBRecord);
+pub struct DataflowData(pub usize, pub DBRecord);
 
 #[derive(Clone, Debug)]
 
@@ -89,12 +89,12 @@ impl DBRecord {
     pub fn new() -> Self {
         DBRecord(BTreeMap::new())
     }
-    pub fn as_raw_pointer(&self) -> *const usize {
+    pub fn as_raw_pointer(&self) -> *const DBRecord {
         let raw = Box::new(self.clone());
-        Box::into_raw(raw) as *const usize
+        Box::into_raw(raw) as *const DBRecord
     }
-    pub fn from_raw_pointer(raw: *const usize) -> Self {
-        unsafe { (*(*raw as *const DBRecord)).clone() }
+    pub fn from_raw_pointer(raw: *const DBRecord) -> Self {
+        unsafe { (*(*&raw as *const DBRecord)).clone() }
     }
 }
 

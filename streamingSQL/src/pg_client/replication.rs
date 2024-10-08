@@ -259,7 +259,6 @@ impl Replicator {
     }
 
     pub async fn start_replication(&mut self) {
-        debug!("Starting replication for table: {}", self.table_name);
         let full_table_name = format!("{}.{}", self.schema_name, self.table_name);
         let options = vec![
             ("pretty-print", "false"),

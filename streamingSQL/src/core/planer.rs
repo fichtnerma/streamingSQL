@@ -41,7 +41,6 @@ impl QueryPlaner {
         }
     }
     pub async fn build_dataflow(&self, query: Query, source: Source) {
-        debug!("Building Dataflow for Query: {:?}", query);
         let table_name = query.to_table_string();
         let sink = Sink::new(table_name.clone()).await;
         let table_identities = self.table_identities.clone();
@@ -103,13 +102,13 @@ impl QueryPlaner {
                     let left_collection = collections
                         .get(&left_table.clone())
                         .unwrap()
-                        .map(join_prepare_left);
-                    // .consolidate();
+                        .map(join_prepare_left)
+                        .consolidate();
                     let right_collection = collections
                         .get(&right_table.clone())
                         .unwrap()
-                        .map(join_prepare_right);
-                    // .consolidate();
+                        .map(join_prepare_right)
+                        .consolidate();
 
                     let output = left_collection.join(&right_collection);
                     let output: Collection<
@@ -191,7 +190,6 @@ impl QueryPlaner {
                         })
                         .collect::<Vec<String>>();
                     sink.insert(&mut values);
-                    debug!("Inserting into sink");
                     sink.execute_transaction();
                 });
 
@@ -252,16 +250,16 @@ impl QueryPlaner {
                     let time = popped.iter().map(|x| x.2).min().unwrap();
                     let max_time = popped.iter().map(|x| x.2).max().unwrap();
                     buffer.update_watermark(max_time);
-                    inputs.advance_to(time + 1);
+                    inputs.advance_to(time);
                     inputs.flush();
-                    info!("Advancing to time: {} and Flushed", time + 1);
+                    info!("Advancing to time: {} and Flushed", time);
                 }
                 if buffer.data.is_empty() && (inputs.time() < buffer.get_watermark()) {
-                    inputs.advance_to(buffer.get_watermark() + 1);
+                    inputs.advance_to(buffer.get_watermark());
                     inputs.flush();
                     debug!(
                         "Advancing to time: {} and Flushed from buffer",
-                        buffer.get_watermark() + 1
+                        buffer.get_watermark()
                     );
                 }
                 worker.step_while(|| probe.less_than(&inputs.time()));

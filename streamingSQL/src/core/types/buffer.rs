@@ -28,6 +28,10 @@ impl Buffer {
     }
 
     pub fn insert(&mut self, table: String, data: DataflowData, time: usize, change: isize) {
+        if self.should_pop() {
+            // prevent buffer popping if it did not receive any data in a while
+            self.last_pop = Instant::now(); // Update the last pop time
+        }
         self.data.push_back((table, data, time, change));
     }
 

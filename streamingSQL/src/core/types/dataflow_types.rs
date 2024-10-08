@@ -4,9 +4,10 @@ use core::hash::Hash;
 use core::{fmt::Debug, panic};
 use serde_json::{Number, Value};
 use std::collections::hash_map::DefaultHasher;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::hash::Hasher;
-use tracing::warn;
+use std::sync::{Arc, Mutex};
+use tracing::{debug, warn};
 
 use crate::pg_client::data::{Insert, Update, WalData, WalEvent};
 
@@ -61,7 +62,7 @@ impl DataflowInput {
                             keys.clone().primary,
                             (keys.foreign, DBRecord::new()),
                         ),
-                        time: usize::try_from(change_event.xid.clone())
+                        time: usize::try_from(change_event.xid.clone() - 1)
                             .expect("Failed to convert time"),
                         change: -1,
                     });
@@ -76,10 +77,10 @@ impl DataflowInput {
                         time: usize::try_from(change_event.xid).expect("Failed to convert time"),
                         change: 1,
                     });
-                    warn!("Update event: {:?}", input);
+                    debug!("Update event: {:?}", input);
                 }
                 WalData::Delete => {
-                    warn!("Delete event: {:?}", change_event);
+                    debug!("Delete event: {:?}", change_event);
                     let keys = get_required_key(required_key.clone(), change_event.clone());
 
                     input.push(DataflowInput {

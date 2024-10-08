@@ -58,7 +58,7 @@ impl Publication {
     }
 
     pub async fn create(&self) -> Result<u64, tokio_postgres::Error> {
-        warn!("Publication for: {} {}", self.pub_name(), self.table_name);
+        debug!("Publication for: {} {}", self.pub_name(), self.table_name);
         let query = format!(
             "CREATE PUBLICATION {} FOR TABLE {}",
             self.pub_name(),

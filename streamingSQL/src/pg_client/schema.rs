@@ -79,7 +79,6 @@ pub async fn get_keys_for_table(table_name: String) -> Result<Vec<Key>, Error> {
     let mut keys: Vec<Key> = Vec::new();
     // Execute the query
     let rows = client.query(&query, &[]).await?;
-    warn!("table_name: {:?}", table_name);
 
     // Print out each column's schema information
     for row in rows {
@@ -98,11 +97,6 @@ pub async fn get_keys_for_table(table_name: String) -> Result<Vec<Key>, Error> {
                 _ => panic!("Unknown key type"),
             },
         });
-
-        warn!(
-            "Column: {}, Type: {}, Foreign Table: {:?}, Foreign Column: {:?}",
-            column_name, key_type, foreign_table, foreign_column
-        );
     }
 
     Ok(keys)

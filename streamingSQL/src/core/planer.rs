@@ -11,8 +11,8 @@ use crate::{
     },
     pg_client::schema::{Key, KeyType},
 };
-use std::thread;
 use std::{collections::HashMap, sync::Arc};
+use std::{sync::Mutex, thread};
 
 use super::parser::Query;
 extern crate differential_dataflow;
@@ -27,12 +27,12 @@ use differential_dataflow::{
 };
 use timely::{communication::Allocator, dataflow::scopes::Child};
 use timely::{dataflow::operators::Probe, worker::Worker as TimelyWorker};
-use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
 
 pub struct QueryPlaner {
     table_identities: HashMap<String, Vec<Key>>,
 }
+type DBState = Arc<Mutex<HashMap<usize, (Option<usize>, DBRecord)>>>;
 
 impl QueryPlaner {
     pub fn new(table_identities: HashMap<String, Vec<Key>>) -> Self {
@@ -41,10 +41,13 @@ impl QueryPlaner {
         }
     }
     pub async fn build_dataflow(&self, query: Query, source: Source) {
-        info!("Building Dataflow for Query: {:?}", query);
+        debug!("Building Dataflow for Query: {:?}", query);
         let table_name = query.to_table_string();
         let sink = Sink::new(table_name.clone()).await;
         let table_identities = self.table_identities.clone();
+        let left_state: DBState = Arc::new(Mutex::new(HashMap::new()));
+        let right_state: DBState = Arc::new(Mutex::new(HashMap::new()));
+
         // Spawn a new thread and move `source` into it
         let _ = timely::execute_from_args(std::env::args(), move |worker| {
             let mut inputs: InputSessions = InputSessions::new(query.tables.clone());
@@ -63,8 +66,13 @@ impl QueryPlaner {
                 .column_name
                 .clone();
             let mut right_key = format!("{}.{}", query.tables[1], right_column);
+            // access the state
+            let left_state_clone = left_state.clone();
+            let right_state_clone = right_state.clone();
 
             let probe = worker.dataflow(|scope| {
+                let l_state = left_state_clone.clone();
+                let r_state = right_state_clone.clone();
                 let mut sink = sink.clone();
                 // Create a new collection from our input.
                 let mut collections = HashMap::new();
@@ -74,17 +82,20 @@ impl QueryPlaner {
                     collections.insert(table.clone(), collection);
                 }
 
-                let join_prepare_left = |x: DataflowData| (x.0, (x.1 .0, x.1 .1.as_raw_pointer()));
-                let join_prepare_right = |x: DataflowData| {
-                    info!("Preparing right collection {:?}", x);
+                let join_prepare_left = move |x: DataflowData| {
+                    let record = x.1 .1;
+                    l_state.lock().unwrap().insert(x.0, (x.1 .0, record));
+                    (x.0, x.1 .0)
+                };
+                let join_prepare_right = move |x: DataflowData| {
                     let foreign_key = x.1 .0;
                     let record = x.1 .1;
-                    (foreign_key.unwrap_or(0), (x.0, record.as_raw_pointer()))
+                    r_state.lock().unwrap().insert(x.0, (x.1 .0, record));
+                    (foreign_key.unwrap_or(0), x.0)
                 };
 
                 // let output = {
                 // Join the collections
-                info!("Joining collections");
                 let left_table = String::from(query.tables.get(0).unwrap());
                 let right_table = String::from(query.tables.get(1).unwrap());
 
@@ -93,29 +104,38 @@ impl QueryPlaner {
                         .get(&left_table.clone())
                         .unwrap()
                         .map(join_prepare_left);
+                    // .consolidate();
                     let right_collection = collections
                         .get(&right_table.clone())
                         .unwrap()
                         .map(join_prepare_right);
+                    // .consolidate();
 
-                    let output = left_collection
-                        .join(&right_collection)
-                        .consolidate()
-                        .inspect(|x| {
-                            info!("Joined: {:?}", x);
-                        });
+                    let output = left_collection.join(&right_collection);
                     let output: Collection<
                         Child<'_, TimelyWorker<Allocator>, usize>,
                         (usize, (usize, DBRecord)),
                     > = output
                         .map(move |x| {
-                            let mut left = DBRecord::from_raw_pointer(x.1 .0 .1)
+                            let mut left = left_state_clone
+                                .lock()
+                                .unwrap()
+                                .get(&x.0)
+                                .unwrap()
+                                .1
+                                .clone()
                                 .prefix_keys(left_table.to_string());
-                            let right = DBRecord::from_raw_pointer(x.1 .1 .1)
+                            let right = right_state_clone
+                                .lock()
+                                .unwrap()
+                                .get(&x.1 .1)
+                                .unwrap()
+                                .1
+                                .clone()
                                 .prefix_keys(right_table.to_string());
-                            (x.0, (x.1 .1 .0, left.merge(right)))
+                            (x.0, (x.1 .1, left.merge(right)))
                         })
-                        .inspect(|x| info!("Mapped: {:?}", x));
+                        .inspect(|x| debug!("Mapped: {:?}", x));
                     output
                 };
 
@@ -171,7 +191,7 @@ impl QueryPlaner {
                         })
                         .collect::<Vec<String>>();
                     sink.insert(&mut values);
-                    warn!("Inserting into sink");
+                    debug!("Inserting into sink");
                     sink.execute_transaction();
                 });
 
@@ -203,21 +223,46 @@ impl QueryPlaner {
                 if let Some(popped) = popped {
                     for event in popped.clone() {
                         let (table, data, time, change) = event;
-                        inputs.update_at_for_table(&table, data, time, change);
-                        debug!(
-                            "Updating table: {} at time: {} with change {}",
-                            table, time, change
-                        );
+
+                        // Handle deletions with only primary key
+                        if change == -1 {
+                            // Determine if it's from left or right
+                            let state = if table == query.tables[0] {
+                                &left_state
+                            } else {
+                                &right_state
+                            };
+
+                            if let Some(full_record) = state.lock().unwrap().remove(&data.0) {
+                                // fill in the rest of the record
+                                inputs.update_at_for_table(
+                                    &table,
+                                    DataflowData(data.0, full_record.clone()), // Full key-value pair
+                                    time,
+                                    change,
+                                );
+                            } else {
+                                info!("Delete event received for non-existent id: {:?}", data);
+                            }
+                        } else {
+                            // For insertions or updates, handle normally
+                            inputs.update_at_for_table(&table, data, time, change);
+                        }
                     }
                     let time = popped.iter().map(|x| x.2).min().unwrap();
                     let max_time = popped.iter().map(|x| x.2).max().unwrap();
                     buffer.update_watermark(max_time);
                     inputs.advance_to(time + 1);
                     inputs.flush();
+                    info!("Advancing to time: {} and Flushed", time + 1);
                 }
                 if buffer.data.is_empty() && (inputs.time() < buffer.get_watermark()) {
                     inputs.advance_to(buffer.get_watermark() + 1);
                     inputs.flush();
+                    debug!(
+                        "Advancing to time: {} and Flushed from buffer",
+                        buffer.get_watermark() + 1
+                    );
                 }
                 worker.step_while(|| probe.less_than(&inputs.time()));
             }

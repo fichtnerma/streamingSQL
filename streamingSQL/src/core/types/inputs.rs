@@ -15,7 +15,6 @@ impl InputSessions {
             let input: InputSession<usize, DataflowData, isize> = InputSession::new();
             inputs.insert(table, input);
         }
-        info!("InputSessions created");
         return InputSessions(inputs);
     }
 
@@ -24,8 +23,6 @@ impl InputSessions {
     }
 
     pub fn get(&mut self, key: &str) -> Option<&mut InputSession<usize, DataflowData, isize>> {
-        info!("Getting input session for table: {}", key);
-        info!("InputSessions: {:?}", self.0.keys());
         self.0.get_mut(key)
     }
 

@@ -37,9 +37,9 @@ pub async fn start_streaming_changes(
 
     // Check if publication exists or create it if it doesn't
     if publication.check_exists().await? {
-        info!("Publication already exists");
+        debug!("Publication already exists");
     } else {
-        info!("Creating publication ");
+        debug!("Creating publication ");
         publication.create().await?;
     }
 

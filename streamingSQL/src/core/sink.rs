@@ -6,7 +6,7 @@ use std::{
 
 use futures::FutureExt;
 use tokio_postgres::{Client, GenericClient};
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::pg_client::replication;
 
@@ -53,7 +53,6 @@ impl Sink {
         match run_time.block_on(self.client.execute(schema.as_str(), &[])) {
             Ok(_) => {
                 self.table_created = true;
-                warn!("created table: {}", schema);
             }
             Err(e) => {
                 warn!("Error creating table: {}", e);
@@ -74,7 +73,7 @@ impl Sink {
         let mut sql = "".to_string();
         let values = self.data.drain(..).collect::<Vec<String>>().join(" ");
         sql.push_str(&values);
-        warn!("Executed query: {}", sql);
+        info!("Executed query: {}", sql);
         run_time
             .block_on(self.client.batch_execute(sql.as_str()))
             .unwrap();

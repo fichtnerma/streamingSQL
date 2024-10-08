@@ -300,11 +300,11 @@ impl Replicator {
                     self.process_txn(&event).await;
                 }
                 Some(Err(e)) => {
-                    debug!("Error reading from stream:{}", e);
+                    warn!("Error reading from stream:{}", e);
                     continue;
                 }
                 None => {
-                    debug!("Stream closed");
+                    warn!("Stream closed");
                     break;
                 }
             }

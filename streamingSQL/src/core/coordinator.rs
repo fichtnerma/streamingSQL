@@ -30,20 +30,18 @@ impl Coordinator {
         let mut table_identities = HashMap::new();
         for table in &query_info.tables {
             let table_name = table.to_string();
-            info!("Listening to Table: {}", &table_name);
+            debug!("Listening to Table: {}", &table_name);
             let (tx, rx) = tokio::sync::broadcast::channel::<Vec<WalEvent>>(10000);
             task::spawn(async { start_streaming_changes(tx, table_name).await });
-            info!("Started listening to Table");
+            debug!("Started listening to Table");
             source.insert(table.to_string(), rx);
             table_identities.insert(
                 table.to_string(),
                 get_keys_for_table(table.to_string()).await.unwrap(),
             );
         }
-        info!("{:?}", source);
         let planer = QueryPlaner::new(table_identities);
         planer.build_dataflow(query_info, source).await;
-        info!("Query processed successfully");
         Ok(())
     }
 }

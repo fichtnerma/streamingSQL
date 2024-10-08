@@ -13,6 +13,7 @@ use crate::pg_client::data::WalEvent;
 pub struct Source {
     receivers: HashMap<String, tokio::sync::broadcast::Receiver<Vec<WalEvent>>>,
     done: bool,
+    watermark: usize,
 }
 
 impl Clone for Source {
@@ -24,6 +25,7 @@ impl Clone for Source {
                 .map(|(k, v)| (k.clone(), v.resubscribe()))
                 .collect(),
             done: self.done,
+            watermark: self.watermark,
         }
     }
 }
@@ -33,6 +35,7 @@ impl Source {
         Self {
             receivers: HashMap::new(),
             done: false,
+            watermark: 0,
         }
     }
 

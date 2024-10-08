@@ -1,9 +1,14 @@
+use std::collections::hash_map::DefaultHasher;
+
 use serde_json::de;
 use sqlparser::ast::Expr::{self, BinaryOp, CompoundIdentifier, Identifier, Value};
 use sqlparser::ast::SetExpr::Select;
 use sqlparser::ast::{JoinOperator, Statement, TableFactor, TableWithJoins};
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
+use std::hash::Hash;
+use std::hash::Hasher;
+use tokio_postgres::Row;
 
 #[derive(Debug, Clone)]
 pub struct Query {
@@ -11,6 +16,28 @@ pub struct Query {
     pub rows: Vec<RowProperty>,
     pub condition: Option<WhereCondition>,
     pub joins: Vec<JoinCondition>,
+}
+
+impl Query {
+    pub fn to_table_string(&self) -> String {
+        let mut table_name = "".to_string();
+        table_name.push_str(&self.tables.join(", "));
+        table_name.push_str(&self.joins.iter().fold("".to_string(), |acc, join| {
+            format!(
+                " {} JOIN {} ON {} {} {}",
+                acc,
+                join.right.table,
+                join.left.to_string(),
+                join.operator,
+                join.right.to_string()
+            )
+        }));
+        let mut hasher = DefaultHasher::new();
+        table_name.hash(&mut hasher);
+        let table_name = hasher.finish();
+
+        return format!("view_{}", table_name);
+    }
 }
 
 #[derive(Debug, Clone)]

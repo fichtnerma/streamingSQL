@@ -32,7 +32,12 @@ impl InputSessions {
     pub fn advance_to(&mut self, time: usize) {
         for input in self.0.values_mut() {
             input.advance_to(time);
+            input.time();
         }
+    }
+
+    pub fn time(&mut self) -> usize {
+        return *self.0.values_mut().last().unwrap().time();
     }
 
     pub fn flush(&mut self) {
@@ -53,3 +58,5 @@ impl InputSessions {
         }
     }
 }
+
+struct Arrangements(HashMap<String, InputSession<usize, DataflowData, isize>>);

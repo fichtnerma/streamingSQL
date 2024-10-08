@@ -167,11 +167,9 @@ impl Replicator {
         self.send_ssu(buf).await;
 
         self.records.clear();
-        debug!("Clearing records: {:?}", self.records);
     }
 
     async fn send_ssu(&mut self, buf: Bytes) {
-        debug!("Trying to send SSU");
         let mut next_step = 1;
         future::poll_fn(|cx| loop {
             match next_step {
@@ -195,7 +193,6 @@ impl Replicator {
             next_step += 1;
         })
         .await;
-        debug!("Sent SSU");
     }
 
     async fn replicate(&self) {
@@ -207,7 +204,6 @@ impl Replicator {
                     return WalEvent::from_wal_json(e.clone());
                 })
                 .collect::<Vec<_>>();
-            debug!("Replicating... {:?}", self.records);
             self.sender.send(wal_events).unwrap();
         }
     }
@@ -227,20 +223,14 @@ impl Replicator {
             }
             // Insert
             "I" => {
-                debug!("Insert===");
-                debug!("{}", serde_json::to_string_pretty(&record).unwrap());
                 self.records.push(record);
             }
             // Update
             "U" => {
-                debug!("Update===");
-                debug!("{}", serde_json::to_string_pretty(&record).unwrap());
                 self.records.push(record);
             }
             // Delete
             "D" => {
-                debug!("Delete===");
-                debug!("{}", serde_json::to_string_pretty(&record).unwrap());
                 self.records.push(record);
             }
             _ => {
@@ -259,10 +249,6 @@ impl Replicator {
             b'k' => {
                 let last_byte = event.last().unwrap();
                 let timeout_imminent = last_byte == &1;
-                debug!(
-                    "Got keepalive message @timeoutImminent:{}, @LSN:{:x?}",
-                    timeout_imminent, self.commit_lsn,
-                );
                 if timeout_imminent {
                     let buf = prepare_ssu(self.commit_lsn);
                     self.send_ssu(buf).await;

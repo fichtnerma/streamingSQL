@@ -20,7 +20,6 @@ pub async fn start_streaming_changes(
         ev("DB_PORT"),
         "postgres"
     );
-    debug!("Connecting to replication client");
     let repl_client = Arc::new(
         replication::DBClient::new(&format!("{} replication=database", db_config))
             .await
@@ -43,17 +42,15 @@ pub async fn start_streaming_changes(
         info!("Creating publication ");
         publication.create().await?;
     }
-    debug!("Before Slot");
 
     let slot_name = format!("slot_{}", table_name.to_lowercase().trim_matches('"'));
     let mut slot = replication::Slot::new(Arc::clone(&repl_client), &slot_name);
     slot.get_confirmed_lsn().await?;
     // Create new replication slot if LSN is None
     if slot.lsn.is_none() {
-        info!("Creating replication slot {:?}", slot_name);
+        debug!("Creating replication slot {:?}", slot_name);
         slot.create().await?;
     }
-    debug!("Before Replicator");
     let mut replicator =
         replication::Replicator::new(Arc::clone(&repl_client), slot, publication, tx);
     replicator.start_replication().await;

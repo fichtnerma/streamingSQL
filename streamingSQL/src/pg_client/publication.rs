@@ -64,9 +64,8 @@ impl Publication {
             self.pub_name(),
             self.table_name
         );
-        debug!("Creating publication: {:?}", query);
         let result = self.client.execute(&query, &[]).await.unwrap();
-        info!("Created publication: {:?}", result);
+        debug!("Created publication: {:?}", result);
         Ok(result)
     }
 }

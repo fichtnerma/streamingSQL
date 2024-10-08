@@ -25,7 +25,7 @@ async fn main() -> Result<(), tokio_postgres::Error> {
     dotenv::dotenv().ok();
     init_logger();
     let mut coordinator = Coordinator::new();
-    let query = r#"SELECT "User".id, "User".name, "Order".total FROM "User" JOIN "Order" ON "User".id = "Order"."buyerId""#;
+    let query = r#"SELECT "User".id, "User".name, "Order".total FROM "User" JOIN "Order" ON "User".id = "Order"."buyerId" WHERE "Order".total > 600"#;
     coordinator.process_view_query(query).await.unwrap();
     Ok(())
 }

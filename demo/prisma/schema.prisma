@@ -15,7 +15,7 @@ model Order {
   id         Int   @id @default(autoincrement())
   total      Float
   nbrOfItems Int
-  buyer      User? @relation(fields: [buyerId], references: [id])
+  buyer      User? @relation(fields: [buyerId], references: [id], onDelete: Cascade)
   buyerId    Int?
 }
 

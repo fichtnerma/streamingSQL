@@ -12,8 +12,7 @@ services:
   demo:
     build:
       context: ./demo
-      dockerfile: Dockerfile
-    command: npm run start:dev
+      dockerfile: Dockerfile.prod
     ports:
       - "3000:3000"
     depends_on:

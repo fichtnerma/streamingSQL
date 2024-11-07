@@ -10,7 +10,7 @@ export class CreateDataProducerDto {
   @IsInt()
   runTime: number;
 
-  @IsNumber({ maxDecimalPlaces: 2 })
+  @IsNumber({ maxDecimalPlaces: 4 })
   @Min(0)
   @Max(1)
   skew: number;

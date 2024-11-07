@@ -8,7 +8,10 @@ export class DataProducerController {
 
   @Post()
   async generate(@Body() createDataProducerDto: CreateDataProducerDto) {
-    await this.dataProducerService.clear();
     return await this.dataProducerService.generate(createDataProducerDto);
+  }
+  @Get('/clear')
+  async clear() {
+    return await this.dataProducerService.clear();
   }
 }

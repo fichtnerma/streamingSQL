@@ -30,7 +30,7 @@ impl Coordinator {
         let mut table_identities = HashMap::new();
         for table in &query_info.tables {
             let table_name = table.to_string();
-            let (tx, rx) = tokio::sync::broadcast::channel::<Vec<WalEvent>>(10000);
+            let (tx, rx) = tokio::sync::broadcast::channel::<Vec<WalEvent>>(100000);
             task::spawn(async { start_streaming_changes(tx, table_name).await });
             source.insert(table.to_string(), rx);
             table_identities.insert(
@@ -38,6 +38,7 @@ impl Coordinator {
                 get_keys_for_table(table.to_string()).await.unwrap(),
             );
         }
+
         let planer = QueryPlaner::new(table_identities);
         planer.build_dataflow(query_info, source).await;
         Ok(())

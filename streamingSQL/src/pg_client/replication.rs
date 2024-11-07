@@ -224,14 +224,17 @@ impl Replicator {
             // Insert
             "I" => {
                 self.records.push(record);
+                debug!("Insert");
             }
             // Update
             "U" => {
                 self.records.push(record);
+                debug!("Update");
             }
             // Delete
             "D" => {
                 self.records.push(record);
+                debug!("Delete");
             }
             _ => {
                 debug!("unknown message");

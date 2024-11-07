@@ -11,7 +11,12 @@ use crate::{
     },
     pg_client::schema::{Key, KeyType},
 };
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    cmp::{max, min},
+    collections::HashMap,
+    ops::Add,
+    sync::Arc,
+};
 use std::{sync::Mutex, thread};
 
 use super::parser::Query;
@@ -70,6 +75,9 @@ impl QueryPlaner {
             let right_state_clone = right_state.clone();
 
             let probe = worker.dataflow(|scope| {
+                let start_time = Arc::new(Mutex::new(std::time::Instant::now()));
+                let start_time_clone = start_time.clone();
+
                 let l_state = left_state_clone.clone();
                 let r_state = right_state_clone.clone();
                 let mut sink = sink.clone();
@@ -102,11 +110,18 @@ impl QueryPlaner {
                     let left_collection = collections
                         .get(&left_table.clone())
                         .unwrap()
+                        .inspect_batch(move |_, batch| {
+                            *start_time.lock().unwrap() = std::time::Instant::now();
+                            warn!("Batch size: {:?}", batch.len());
+                        })
                         .map(join_prepare_left)
                         .consolidate();
                     let right_collection = collections
                         .get(&right_table.clone())
                         .unwrap()
+                        .inspect_batch(move |_, batch| {
+                            warn!("Batch size: {:?}", batch.len());
+                        })
                         .map(join_prepare_right)
                         .consolidate();
 
@@ -169,7 +184,6 @@ impl QueryPlaner {
                     }
 
                     let batch = batch.to_vec();
-
                     let mut values = batch
                         .iter()
                         .map(|((pk, (fk, record)), _, diff)| {
@@ -191,6 +205,9 @@ impl QueryPlaner {
                         .collect::<Vec<String>>();
                     sink.insert(&mut values);
                     sink.execute_transaction();
+                    let batch_time = std::time::Instant::now();
+                    let start_time = *start_time_clone.lock().unwrap();
+                    warn!("Batch time: {:?} ", batch_time.duration_since(start_time),);
                 });
 
                 output.probe()
@@ -215,13 +232,18 @@ impl QueryPlaner {
                         }
                     }
                 } else {
-                    worker.step_while(|| probe.less_than(&inputs.time()));
+                    while probe.less_than(&inputs.time()) {
+                        worker.step();
+                    }
                 }
                 let popped = buffer.pop();
                 if let Some(popped) = popped {
                     for event in popped.clone() {
                         let (table, data, time, change) = event;
-
+                        debug!(
+                            "Processing event: {:?} with time: {:?} and change: {:?}",
+                            data, time, change
+                        );
                         // Handle deletions with only primary key
                         if change == -1 {
                             // Determine if it's from left or right
@@ -247,22 +269,24 @@ impl QueryPlaner {
                             inputs.update_at_for_table(&table, data, time, change);
                         }
                     }
-                    let time = popped.iter().map(|x| x.2).min().unwrap();
+                    let min_time = popped.iter().map(|x| x.2).min().unwrap();
+                    // let updated_time = if inputs.time() > 1 {
+                    //     min(inputs.time().add(popped.len()), min_time)
+                    // } else {
+                    //     max(inputs.time().add(popped.len()), min_time)
+                    // };
                     let max_time = popped.iter().map(|x| x.2).max().unwrap();
                     buffer.update_watermark(max_time);
-                    inputs.advance_to(time);
+                    inputs.advance_to(min_time);
                     inputs.flush();
-                    info!("Advancing to time: {} and Flushed", time);
-                }
-                if buffer.data.is_empty() && (inputs.time() < buffer.get_watermark()) {
-                    inputs.advance_to(buffer.get_watermark());
+                } else if buffer.data.is_empty() && (inputs.time() < buffer.get_watermark()) {
+                    let updated_time = inputs.time() + 1;
+                    inputs.advance_to(updated_time);
                     inputs.flush();
-                    debug!(
-                        "Advancing to time: {} and Flushed from buffer",
-                        buffer.get_watermark()
-                    );
                 }
-                worker.step_while(|| probe.less_than(&inputs.time()));
+                while probe.less_than(&inputs.time()) {
+                    worker.step();
+                }
             }
         });
     }

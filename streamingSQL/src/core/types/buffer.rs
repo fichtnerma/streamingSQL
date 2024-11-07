@@ -71,7 +71,7 @@ impl Buffer {
                 .sort_by(|a, b| a.2.cmp(&b.2));
             while let Some((table, data, time, change)) = self.data.pop_front() {
                 results.push((table, data, time, change));
-                if results.len() as u16 >= self.size && self.data.front().unwrap().2 != time {
+                if results.len() as u16 >= self.size {
                     break;
                 }
             }
